@@ -132,7 +132,32 @@ export async function initDb() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS leave_requests (
+      id SERIAL PRIMARY KEY,
+      service_request_id INT NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+      decided_by INT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      decided_at TIMESTAMPTZ
+    );
+  `);
+
+  await pool.query(`
+    DO $$ DECLARE cname TEXT; BEGIN
+      SELECT conname INTO cname FROM pg_constraint WHERE conrelid = 'service_requests'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%status%' LIMIT 1;
+      IF cname IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE service_requests DROP CONSTRAINT ' || quote_ident(cname);
+      END IF;
+      ALTER TABLE service_requests ADD CONSTRAINT service_requests_status_check CHECK (status IN ('RECEIVED', 'ACK_SENT', 'PENDING_DECISION', 'ACCEPTED', 'REJECTED', 'JOB_POOL_OPEN', 'COMPLETED'));
+    END $$;
+  `);
+
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_leave_request ON leave_requests(service_request_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_leave_user ON leave_requests(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_slots_request ON job_slots(service_request_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_slots_filled ON job_slots(filled_by)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_applications_request ON applications(service_request_id)`);
