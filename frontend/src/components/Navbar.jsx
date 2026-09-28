@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 export default function Navbar() {
   const { isAuthenticated, logout, user } = useAuth();
+  const role = user?.role;
 
   return (
     <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-3">
@@ -23,6 +24,21 @@ export default function Navbar() {
           <Link to="/revision/new" className="text-zinc-500 transition hover:text-zinc-900">
             Revise
           </Link>
+          {isAuthenticated && (role === "exc" || role === "admin") && (
+            <Link to="/dashboard/requests" className="text-zinc-500 transition hover:text-zinc-900">
+              Requests
+            </Link>
+          )}
+          {isAuthenticated && (role === "pm" || role === "admin") && (
+            <Link to="/dashboard/revisions" className="text-zinc-500 transition hover:text-zinc-900">
+              Revisions
+            </Link>
+          )}
+          {isAuthenticated && (
+            <Link to="/dashboard/job-pool" className="text-zinc-500 transition hover:text-zinc-900">
+              Jobs
+            </Link>
+          )}
         </div>
         {isAuthenticated && user?.email && (
           <span className="ml-2 hidden text-xs text-zinc-500 lg:inline">· {user.email}</span>

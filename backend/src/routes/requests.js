@@ -81,6 +81,17 @@ router.get("/", requireAuth, requireRole("exc", "admin"), async (req, res) => {
   }
 });
 
+router.get("/pool/open", requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      "SELECT s.id, s.title, s.client_name, s.status, s.created_at, p.opened_at FROM service_requests s JOIN job_pool_posts p ON p.service_request_id = s.id WHERE p.is_open = TRUE AND s.status = 'ACCEPTED' ORDER BY p.opened_at DESC"
+    );
+    return res.json({ items: r.rows });
+  } catch {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 router.get("/:id", requireAuth, requireRole("exc", "pm", "admin"), async (req, res) => {
   try {
     const r = await pool.query("SELECT * FROM service_requests WHERE id = $1", [req.params.id]);
