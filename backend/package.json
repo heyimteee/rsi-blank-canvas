@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "SMTP_ENABLED=false node --test test/app.test.js test/schema.test.js test/mailer.test.js test/requests.test.js test/revisions.test.js test/rbac.test.js test/pool.test.js test/jobs.test.js test/team.test.js test/templates.test.js test/work.test.js",
+    "test": "SMTP_ENABLED=false node --test --test-concurrency=1 test/app.test.js test/schema.test.js test/mailer.test.js test/requests.test.js test/revisions.test.js test/rbac.test.js test/pool.test.js test/jobs.test.js test/team.test.js test/templates.test.js test/work.test.js",
     "seed": "node scripts/seed.js"
   },
   "dependencies": {
