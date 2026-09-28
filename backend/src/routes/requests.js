@@ -129,6 +129,12 @@ router.post("/:id/decision", requireAuth, requireRole("exc", "admin"), async (re
       await client.query("INSERT INTO job_pool_posts (service_request_id) VALUES ($1) ON CONFLICT DO NOTHING", [
         req.params.id,
       ]);
+      for (const seat of ["pm", "fe", "be", "pd"]) {
+        await client.query(
+          "INSERT INTO job_slots (service_request_id, role, status) VALUES ($1, $2, 'OPEN') ON CONFLICT DO NOTHING",
+          [req.params.id, seat]
+        );
+      }
       await client.query("COMMIT");
       await mail(row.client_email, "ACCEPTANCE_ACK", "Your request was accepted", "<p>Your request was accepted and the job pool is now open.</p>");
       await logNotification({ recipient_email: null, type: "JOB_POOL_BROADCAST", payload: { request_id: row.id } });
