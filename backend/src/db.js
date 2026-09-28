@@ -31,9 +31,10 @@ export async function initDb() {
 
   await pool.query(`
     DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check') THEN
-        ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('exc', 'pm', 'member', 'admin'));
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check') THEN
+        ALTER TABLE users DROP CONSTRAINT users_role_check;
       END IF;
+      ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('exc', 'pm', 'fe', 'be', 'pd', 'member', 'admin'));
     END $$;
   `);
 

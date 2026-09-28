@@ -9,12 +9,16 @@ test("seed is idempotent and creates demo roles", async () => {
   await initDb();
   await seed();
   await seed();
-  const r = await pool.query("SELECT email, role FROM users WHERE email IN ('exc@bcc.local','pm@bcc.local','dev@bcc.local') ORDER BY email");
-  assert.equal(r.rows.length, 3);
+  const r = await pool.query("SELECT email, role FROM users WHERE email IN ('exc@bcc.local','pm@bcc.local','fe@bcc.local','be@bcc.local','pd@bcc.local') ORDER BY email");
+  assert.equal(r.rows.length, 5);
   const map = Object.fromEntries(r.rows.map((x) => [x.email, x.role]));
   assert.equal(map["exc@bcc.local"], "exc");
   assert.equal(map["pm@bcc.local"], "pm");
-  assert.equal(map["dev@bcc.local"], "member");
+  assert.equal(map["fe@bcc.local"], "fe");
+  assert.equal(map["be@bcc.local"], "be");
+  assert.equal(map["pd@bcc.local"], "pd");
+  const gone = await pool.query("SELECT id FROM users WHERE email = 'dev@bcc.local'");
+  assert.equal(gone.rows.length, 0);
 });
 
 test("auth responses include role and block escalation", async () => {
@@ -37,7 +41,7 @@ test("cross role access is forbidden", async () => {
   await seed();
   const excLogin = await request(app).post("/api/auth/login").send({ email: "exc@bcc.local", password: process.env.SEED_PASSWORD || "Password123" });
   const pmLogin = await request(app).post("/api/auth/login").send({ email: "pm@bcc.local", password: process.env.SEED_PASSWORD || "Password123" });
-  const devLogin = await request(app).post("/api/auth/login").send({ email: "dev@bcc.local", password: process.env.SEED_PASSWORD || "Password123" });
+  const devLogin = await request(app).post("/api/auth/login").send({ email: "fe@bcc.local", password: process.env.SEED_PASSWORD || "Password123" });
   const devList = await request(app).get("/api/requests").set("Authorization", `Bearer ${devLogin.body.token}`);
   assert.equal(devList.status, 403);
   const excRev = await request(app).get("/api/revisions").set("Authorization", `Bearer ${excLogin.body.token}`);
