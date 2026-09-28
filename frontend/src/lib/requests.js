@@ -11,3 +11,7 @@ export function trackRequest(token) {
 export function submitRevision(body) {
   return apiFetch("/api/revisions", { method: "POST", body });
 }
+
+export function trackRevisions(token) {
+  return apiFetch(`/api/revisions/by-token/${token}`);
+}

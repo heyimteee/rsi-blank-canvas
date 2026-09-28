@@ -3,12 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import Field, { inputCls } from "../components/Field.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { validateRevision, isValidEmail } from "../lib/validation.js";
-import { submitRevision } from "../lib/requests.js";
+import { submitRevision, trackRequest } from "../lib/requests.js";
 
 export default function RevisionNew() {
   const [params] = useSearchParams();
   const { push } = useToast();
-  const [requestId, setRequestId] = useState(params.get("project") || "");
+  const [token, setToken] = useState(params.get("token") || "");
   const [email, setEmail] = useState("");
   const [details, setDetails] = useState("");
   const [terms, setTerms] = useState("");
@@ -18,8 +18,8 @@ export default function RevisionNew() {
 
   async function onSubmit(e) {
     e.preventDefault();
-    if (!Number.isInteger(Number(requestId)) || Number(requestId) <= 0) {
-      setError("Enter a valid request ID.");
+    if (!token.trim()) {
+      setError("Paste your tracking token from the confirmation email.");
       return;
     }
     if (!isValidEmail(email.trim().toLowerCase())) {
@@ -34,8 +34,9 @@ export default function RevisionNew() {
     setError("");
     setLoading(true);
     try {
+      const found = await trackRequest(token.trim());
       const out = await submitRevision({
-        service_request_id: Number(requestId),
+        service_request_id: found.id,
         client_email: email.trim(),
         general_details: details.trim(),
         terms: terms.trim(),
@@ -83,8 +84,8 @@ export default function RevisionNew() {
           </div>
         )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Request ID" helper="Numeric ID from your accepted request.">
-            <input className={`${inputCls} tabular-nums`} value={requestId} onChange={(e) => setRequestId(e.target.value)} placeholder="e.g. 12" inputMode="numeric" />
+          <Field label="Tracking token" helper="From your request confirmation email.">
+            <input className={`${inputCls} font-mono`} value={token} onChange={(e) => setToken(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
           </Field>
           <Field label="Email">
             <input className={inputCls} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
