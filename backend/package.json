@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node --test test/app.test.js test/schema.test.js test/mailer.test.js test/requests.test.js"
+    "test": "node --test test/app.test.js test/schema.test.js test/mailer.test.js test/requests.test.js test/revisions.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
