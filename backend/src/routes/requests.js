@@ -92,6 +92,64 @@ router.get("/pool/open", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/:id/full", requireAuth, requireRole("exc", "admin"), async (req, res) => {
+  try {
+    const q = await pool.query("SELECT * FROM service_requests WHERE id = $1", [req.params.id]);
+    if (q.rows.length === 0) return res.status(404).json({ message: "Request not found" });
+    const slots = await pool.query(
+      "SELECT s.id, s.role, s.status, s.filled_by, u.email AS occupant_email, u.full_name AS occupant_name FROM job_slots s LEFT JOIN users u ON u.id = s.filled_by WHERE s.service_request_id = $1 ORDER BY s.role",
+      [req.params.id]
+    );
+    const milestones = await pool.query(
+      "SELECT * FROM milestones WHERE service_request_id = $1 ORDER BY sort_order ASC, id ASC",
+      [req.params.id]
+    );
+    const tasks =
+      milestones.rows.length === 0
+        ? { rows: [] }
+        : await pool.query("SELECT * FROM tasks WHERE milestone_id = ANY($1) ORDER BY sort_order ASC, id ASC", [
+            milestones.rows.map((m) => m.id),
+          ]);
+    const revisions = await pool.query("SELECT * FROM revisions WHERE service_request_id = $1 ORDER BY id DESC", [
+      req.params.id,
+    ]);
+    return res.json({ request: q.rows[0], slots: slots.rows, milestones: milestones.rows, tasks: tasks.rows, revisions: revisions.rows });
+  } catch {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.delete("/:id", requireAuth, requireRole("exc", "admin"), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const cur = await client.query("SELECT id FROM service_requests WHERE id = $1", [req.params.id]);
+    if (cur.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Request not found" });
+    }
+    const id = Number(req.params.id);
+    await client.query("DELETE FROM job_slots WHERE service_request_id = $1", [id]);
+    await client.query("DELETE FROM applications WHERE service_request_id = $1", [id]);
+    await client.query("DELETE FROM leave_requests WHERE service_request_id = $1", [id]);
+    await client.query("DELETE FROM job_pool_posts WHERE service_request_id = $1", [id]);
+    await client.query("DELETE FROM milestones WHERE service_request_id = $1", [id]);
+    await client.query("DELETE FROM revisions WHERE service_request_id = $1", [id]);
+    await client.query("DELETE FROM service_requests WHERE id = $1", [id]);
+    await client.query("COMMIT");
+    return res.json({ id, deleted: true });
+  } catch {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      return res.status(500).json({ message: "Internal server error" });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
 router.get("/:id", requireAuth, requireRole("exc", "pm", "admin"), async (req, res) => {
   try {
     const r = await pool.query("SELECT * FROM service_requests WHERE id = $1", [req.params.id]);

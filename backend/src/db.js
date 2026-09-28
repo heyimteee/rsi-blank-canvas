@@ -155,7 +155,22 @@ export async function initDb() {
     END $$;
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id SERIAL PRIMARY KEY,
+      milestone_id INT NOT NULL REFERENCES milestones(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      assignee_id INT REFERENCES users(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'IN_PROGRESS', 'DONE')),
+      sort_order INT NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_milestone ON tasks(milestone_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_leave_request ON leave_requests(service_request_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_leave_user ON leave_requests(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_slots_request ON job_slots(service_request_id)`);
