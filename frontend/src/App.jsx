@@ -7,6 +7,12 @@ import Register from "./pages/Register.jsx";
 import Request from "./pages/Request.jsx";
 import Track from "./pages/Track.jsx";
 import RevisionNew from "./pages/RevisionNew.jsx";
+import Requests from "./pages/dashboard/Requests.jsx";
+import RequestDetail from "./pages/dashboard/RequestDetail.jsx";
+import Revisions from "./pages/dashboard/Revisions.jsx";
+import RevisionDetail from "./pages/dashboard/RevisionDetail.jsx";
+import JobPool from "./pages/dashboard/JobPool.jsx";
+import Milestones from "./pages/dashboard/Milestones.jsx";
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -18,6 +24,29 @@ function ProtectedRoute({ children }) {
     );
   }
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RequireRole({ roles, children }) {
+  const { user, loading, isAuthenticated } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex min-h-[calc(100vh-56px)] items-center justify-center bg-white">
+        <p className="text-sm text-zinc-500">Checking authentication...</p>
+      </div>
+    );
+  }
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!roles.includes(user?.role)) {
+    return (
+      <main className="mx-auto w-full max-w-xl px-4 py-10">
+        <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+          <p className="text-base font-semibold text-zinc-900">Not allowed for your role</p>
+          <p className="mt-1 text-sm text-zinc-500">Ask an admin to update your role if you need access.</p>
+        </div>
+      </main>
+    );
+  }
   return children;
 }
 
@@ -51,6 +80,54 @@ function AppRoutes() {
         <Route path="/track" element={<Track />} />
         <Route path="/track/:token" element={<Track />} />
         <Route path="/revision/new" element={<RevisionNew />} />
+        <Route
+          path="/dashboard/requests"
+          element={
+            <RequireRole roles={["exc", "admin"]}>
+              <Requests />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/dashboard/requests/:id"
+          element={
+            <RequireRole roles={["exc", "admin"]}>
+              <RequestDetail />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/dashboard/revisions"
+          element={
+            <RequireRole roles={["pm", "admin"]}>
+              <Revisions />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/dashboard/revisions/:id"
+          element={
+            <RequireRole roles={["pm", "admin"]}>
+              <RevisionDetail />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/dashboard/job-pool"
+          element={
+            <ProtectedRoute>
+              <JobPool />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard/milestones"
+          element={
+            <ProtectedRoute>
+              <Milestones />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/login"
           element={
