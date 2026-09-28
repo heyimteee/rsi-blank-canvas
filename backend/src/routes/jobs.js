@@ -183,4 +183,204 @@ router.post("/applications/:appId/decision", requireAuth, requireRole("exc", "ad
   }
 });
 
+async function pmOfJob(requestId, userId) {
+  const me = await pool.query("SELECT role FROM users WHERE id = $1", [userId]);
+  if (!me.rows[0] || me.rows[0].role !== "pm") return false;
+  const seat = await pool.query("SELECT filled_by FROM job_slots WHERE service_request_id = $1 AND role = 'pm'", [
+    requestId,
+  ]);
+  if (seat.rows.length === 0) return true;
+  if (seat.rows[0].filled_by === null) return true;
+  return seat.rows[0].filled_by === userId;
+}
+
+router.post("/:requestId/leave", requireAuth, async (req, res) => {
+  const requestId = Number(req.params.requestId);
+  if (!Number.isInteger(requestId)) return res.status(400).json({ message: "Invalid request id" });
+  try {
+    const seat = await pool.query(
+      "SELECT id FROM job_slots WHERE service_request_id = $1 AND filled_by = $2 AND status = 'FILLED'",
+      [requestId, req.user.id]
+    );
+    if (seat.rows.length === 0) return res.status(400).json({ message: "You hold no seat on this job" });
+    const dup = await pool.query(
+      "SELECT id FROM leave_requests WHERE service_request_id = $1 AND user_id = $2 AND status = 'PENDING'",
+      [requestId, req.user.id]
+    );
+    if (dup.rows.length > 0) return res.status(409).json({ message: "Leave request already pending" });
+    const ins = await pool.query(
+      "INSERT INTO leave_requests (service_request_id, user_id, reason, status) VALUES ($1, $2, $3, 'PENDING') RETURNING id, status",
+      [requestId, req.user.id, req.body && req.body.reason ? String(req.body.reason) : null]
+    );
+    await logNotification({
+      recipient_email: null,
+      type: "LEAVE_REQUESTED",
+      payload: { request_id: requestId, user_id: req.user.id },
+    });
+    return res.status(201).json({ id: ins.rows[0].id, status: ins.rows[0].status });
+  } catch {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.get("/:requestId/leave-requests", requireAuth, requireRole("pm", "admin"), async (req, res) => {
+  try {
+    const r = await pool.query(
+      "SELECT l.id, l.service_request_id, l.user_id, l.reason, l.status, l.created_at, u.email FROM leave_requests l JOIN users u ON u.id = l.user_id WHERE l.service_request_id = $1 ORDER BY l.id",
+      [req.params.requestId]
+    );
+    return res.json({ items: r.rows });
+  } catch {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.post("/leave/:leaveId/decision", requireAuth, requireRole("pm", "admin"), async (req, res) => {
+  const decision = req.body && req.body.decision;
+  if (decision !== "accept" && decision !== "reject") {
+    return res.status(400).json({ message: "Decision must be accept or reject" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const cur = await client.query(
+      "SELECT l.*, u.email AS user_email FROM leave_requests l JOIN users u ON u.id = l.user_id WHERE l.id = $1 FOR UPDATE",
+      [req.params.leaveId]
+    );
+    if (cur.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Leave request not found" });
+    }
+    const row = cur.rows[0];
+    if (row.status !== "PENDING") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ message: "Leave request already decided" });
+    }
+    if (!(await pmOfJob(row.service_request_id, req.user.id))) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "Only this job's project manager decides" });
+    }
+    if (decision === "reject") {
+      await client.query("UPDATE leave_requests SET status = 'REJECTED', decided_by = $1, decided_at = NOW() WHERE id = $2", [
+        req.user.id,
+        req.params.leaveId,
+      ]);
+      await client.query("COMMIT");
+      await logNotification({
+        recipient_email: row.user_email,
+        recipient_user_id: row.user_id,
+        type: "LEAVE_DECIDED",
+        payload: { request_id: row.service_request_id, outcome: "rejected" },
+      });
+      return res.json({ id: Number(req.params.leaveId), status: "REJECTED" });
+    }
+    await client.query("UPDATE leave_requests SET status = 'APPROVED', decided_by = $1, decided_at = NOW() WHERE id = $2", [
+      req.user.id,
+      req.params.leaveId,
+    ]);
+    await client.query(
+      "UPDATE job_slots SET status = 'OPEN', filled_by = NULL WHERE service_request_id = $1 AND filled_by = $2 AND status = 'FILLED'",
+      [row.service_request_id, row.user_id]
+    );
+    await client.query("COMMIT");
+    await logNotification({
+      recipient_email: row.user_email,
+      recipient_user_id: row.user_id,
+      type: "LEAVE_DECIDED",
+      payload: { request_id: row.service_request_id, outcome: "approved" },
+    });
+    return res.json({ id: Number(req.params.leaveId), status: "APPROVED" });
+  } catch {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      return res.status(500).json({ message: "Internal server error" });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/slots/:slotId/kick", requireAuth, requireRole("pm", "admin"), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const cur = await client.query("SELECT * FROM job_slots WHERE id = $1 FOR UPDATE", [req.params.slotId]);
+    if (cur.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Seat not found" });
+    }
+    const seat = cur.rows[0];
+    if (!(await pmOfJob(seat.service_request_id, req.user.id))) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "Only this job's project manager removes members" });
+    }
+    if (seat.status !== "FILLED" || seat.filled_by === null) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Seat is already open" });
+    }
+    const kicked = seat.filled_by;
+    await client.query("UPDATE job_slots SET status = 'OPEN', filled_by = NULL WHERE id = $1", [req.params.slotId]);
+    await client.query(
+      "UPDATE leave_requests SET status = 'REJECTED', decided_by = $1, decided_at = NOW() WHERE service_request_id = $2 AND user_id = $3 AND status = 'PENDING'",
+      [req.user.id, seat.service_request_id, kicked]
+    );
+    await client.query("COMMIT");
+    const u = await pool.query("SELECT email FROM users WHERE id = $1", [kicked]);
+    await logNotification({
+      recipient_email: u.rows[0] && u.rows[0].email,
+      recipient_user_id: kicked,
+      type: "KICKED",
+      payload: { request_id: seat.service_request_id },
+    });
+    return res.json({ id: Number(req.params.slotId), status: "OPEN" });
+  } catch {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      return res.status(500).json({ message: "Internal server error" });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/:requestId/complete", requireAuth, requireRole("pm", "admin"), async (req, res) => {
+  const requestId = Number(req.params.requestId);
+  if (!Number.isInteger(requestId)) return res.status(400).json({ message: "Invalid request id" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const cur = await client.query("SELECT status FROM service_requests WHERE id = $1 FOR UPDATE", [requestId]);
+    if (cur.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Request not found" });
+    }
+    if (cur.rows[0].status !== "ACCEPTED") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Only an active job can be completed" });
+    }
+    if (!(await pmOfJob(requestId, req.user.id))) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "Only this job's project manager completes it" });
+    }
+    await client.query("UPDATE service_requests SET status = 'COMPLETED' WHERE id = $1", [requestId]);
+    await client.query("UPDATE job_pool_posts SET is_open = FALSE WHERE service_request_id = $1", [requestId]);
+    await client.query("COMMIT");
+    await logNotification({ recipient_email: null, type: "JOB_COMPLETED", payload: { request_id: requestId } });
+    return res.json({ id: requestId, status: "COMPLETED" });
+  } catch {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      return res.status(500).json({ message: "Internal server error" });
+    }
+    return res.status(500).json({ message: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;
