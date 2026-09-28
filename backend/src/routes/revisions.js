@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/roles.js";
 import { logNotification } from "../lib/notify.js";
 import { sendMail } from "../lib/mailer.js";
+import { pmOfJob } from "./jobs.js";
 
 const router = express.Router();
 
@@ -65,6 +66,31 @@ router.get("/request/:id/milestones", requireAuth, async (req, res) => {
   try {
     const r = await pool.query("SELECT * FROM milestones WHERE service_request_id = $1 ORDER BY sort_order ASC, id ASC", [
       req.params.id,
+    ]);
+    return res.json({ items: r.rows });
+  } catch {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.get("/by-token/:token", async (req, res) => {
+  try {
+    const q = await pool.query("SELECT id FROM service_requests WHERE tracking_token = $1", [req.params.token]);
+    if (q.rows.length === 0) return res.status(404).json({ message: "Request not found" });
+    const r = await pool.query(
+      "SELECT id, service_request_id, status, general_details, created_at FROM revisions WHERE service_request_id = $1 ORDER BY id DESC",
+      [q.rows[0].id]
+    );
+    return res.json({ items: r.rows });
+  } catch {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.get("/milestones/:mid/tasks", requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query("SELECT * FROM tasks WHERE milestone_id = $1 ORDER BY sort_order ASC, id ASC", [
+      req.params.mid,
     ]);
     return res.json({ items: r.rows });
   } catch {
@@ -175,6 +201,105 @@ router.put("/milestones/:mid", requireAuth, requireRole("pm", "admin"), async (r
       req.params.mid,
     ]);
     if (r.rows.length === 0) return res.status(404).json({ message: "Milestone not found" });
+    return res.json(r.rows[0]);
+  } catch {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.post("/milestones/:mid/tasks", requireAuth, requireRole("pm", "admin"), async (req, res) => {
+  const b = req.body || {};
+  if (!b.title || String(b.title).trim().length < 3) {
+    return res.status(400).json({ message: "Task title must be at least 3 characters" });
+  }
+  try {
+    const ms = await pool.query("SELECT service_request_id FROM milestones WHERE id = $1", [req.params.mid]);
+    if (ms.rows.length === 0) return res.status(404).json({ message: "Milestone not found" });
+    const requestId = ms.rows[0].service_request_id;
+    if (!(await pmOfJob(requestId, req.user.id))) {
+      return res.status(403).json({ message: "Only this job's project manager assigns tasks" });
+    }
+    let assignee = null;
+    if (b.assignee_id !== undefined && b.assignee_id !== null) {
+      const seat = await pool.query(
+        "SELECT id FROM job_slots WHERE service_request_id = $1 AND filled_by = $2 AND status = 'FILLED'",
+        [requestId, Number(b.assignee_id)]
+      );
+      if (seat.rows.length === 0) return res.status(400).json({ message: "Assignee holds no seat on this job" });
+      assignee = Number(b.assignee_id);
+    }
+    const r = await pool.query(
+      "INSERT INTO tasks (milestone_id, title, description, assignee_id, status) VALUES ($1, $2, $3, $4, 'OPEN') RETURNING *",
+      [req.params.mid, String(b.title).trim(), b.description ? String(b.description) : null, assignee]
+    );
+    if (assignee) {
+      const u = await pool.query("SELECT email FROM users WHERE id = $1", [assignee]);
+      await logNotification({
+        recipient_email: u.rows[0] && u.rows[0].email,
+        recipient_user_id: assignee,
+        type: "TASK_ASSIGNED",
+        payload: { request_id: requestId, task_id: r.rows[0].id },
+      });
+    }
+    return res.status(201).json(r.rows[0]);
+  } catch {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.put("/tasks/:tid", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  try {
+    const cur = await pool.query(
+      "SELECT t.*, m.service_request_id FROM tasks t JOIN milestones m ON m.id = t.milestone_id WHERE t.id = $1",
+      [req.params.tid]
+    );
+    if (cur.rows.length === 0) return res.status(404).json({ message: "Task not found" });
+    const row = cur.rows[0];
+    const isPm = await pmOfJob(row.service_request_id, req.user.id);
+    const isAssignee = row.assignee_id === req.user.id;
+    if (!isPm && !isAssignee) return res.status(403).json({ message: "Only the assignee or project manager updates this task" });
+    if (!isPm) {
+      const keys = Object.keys(b);
+      const onlyStatus = keys.length > 0 && keys.every((k) => k === "status");
+      if (!onlyStatus || !["OPEN", "IN_PROGRESS", "DONE"].includes(b.status)) {
+        return res.status(403).json({ message: "Assignees may only move task status" });
+      }
+      const r = await pool.query("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *", [
+        b.status,
+        req.params.tid,
+      ]);
+      return res.json(r.rows[0]);
+    }
+    const patch = {};
+    if (b.title !== undefined) {
+      if (String(b.title).trim().length < 3) return res.status(400).json({ message: "Task title must be at least 3 characters" });
+      patch.title = String(b.title).trim();
+    }
+    if (b.description !== undefined) patch.description = b.description ? String(b.description) : null;
+    if (b.status !== undefined) {
+      if (!["OPEN", "IN_PROGRESS", "DONE"].includes(b.status)) return res.status(400).json({ message: "Invalid task status" });
+      patch.status = b.status;
+    }
+    if (b.assignee_id !== undefined) {
+      if (b.assignee_id === null) {
+        patch.assignee_id = null;
+      } else {
+        const seat = await pool.query(
+          "SELECT id FROM job_slots WHERE service_request_id = $1 AND filled_by = $2 AND status = 'FILLED'",
+          [row.service_request_id, Number(b.assignee_id)]
+        );
+        if (seat.rows.length === 0) return res.status(400).json({ message: "Assignee holds no seat on this job" });
+        patch.assignee_id = Number(b.assignee_id);
+      }
+    }
+    if (Object.keys(patch).length === 0) return res.status(400).json({ message: "Nothing to update" });
+    const cols = Object.keys(patch);
+    const sets = cols.map((c, i) => `${c} = $${i + 1}`).join(", ");
+    const r = await pool.query(`UPDATE tasks SET ${sets}, updated_at = NOW() WHERE id = $${cols.length + 1} RETURNING *`, [
+      ...cols.map((c) => patch[c]),
+      req.params.tid,
+    ]);
     return res.json(r.rows[0]);
   } catch {
     return res.status(500).json({ message: "Internal server error" });

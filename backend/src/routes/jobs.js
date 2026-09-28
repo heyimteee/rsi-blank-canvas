@@ -183,7 +183,7 @@ router.post("/applications/:appId/decision", requireAuth, requireRole("exc", "ad
   }
 });
 
-async function pmOfJob(requestId, userId) {
+export async function pmOfJob(requestId, userId) {
   const me = await pool.query("SELECT role FROM users WHERE id = $1", [userId]);
   if (!me.rows[0] || me.rows[0].role !== "pm") return false;
   const seat = await pool.query("SELECT filled_by FROM job_slots WHERE service_request_id = $1 AND role = 'pm'", [

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node --test test/app.test.js test/schema.test.js test/mailer.test.js test/requests.test.js test/revisions.test.js test/rbac.test.js test/pool.test.js test/jobs.test.js test/team.test.js",
+    "test": "node --test test/app.test.js test/schema.test.js test/mailer.test.js test/requests.test.js test/revisions.test.js test/rbac.test.js test/pool.test.js test/jobs.test.js test/team.test.js test/work.test.js",
     "seed": "node scripts/seed.js"
   },
   "dependencies": {
