@@ -12,13 +12,12 @@ function isValidEmail(email) {
 
 function signToken(user) {
   return jwt.sign(
-    { id: user.id, email: user.email },
+    { id: user.id, email: user.email, role: user.role || "member" },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
   );
 }
 
-// POST /api/auth/register
 router.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
@@ -40,7 +39,7 @@ router.post("/register", async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email",
+      "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, 'member') RETURNING id, email, role",
       [email.toLowerCase(), hash]
     );
     const user = result.rows[0];
@@ -52,7 +51,6 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// POST /api/auth/login
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -61,7 +59,7 @@ router.post("/login", async (req, res) => {
   }
 
   try {
-    const result = await pool.query("SELECT id, email, password_hash FROM users WHERE email = $1", [
+    const result = await pool.query("SELECT id, email, password_hash, role FROM users WHERE email = $1", [
       email.toLowerCase(),
     ]);
     if (result.rows.length === 0) {
@@ -72,18 +70,19 @@ router.post("/login", async (req, res) => {
     if (!match) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
-    const token = signToken({ id: user.id, email: user.email });
-    return res.json({ token, user: { id: user.id, email: user.email } });
+    const token = signToken({ id: user.id, email: user.email, role: user.role });
+    return res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
   } catch (err) {
     console.error("[login] error:", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 });
 
-// GET /api/auth/me - protected, returns current user
 router.get("/me", requireAuth, async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, email, created_at FROM users WHERE id = $1", [req.user.id]);
+    const result = await pool.query("SELECT id, email, role, full_name, created_at FROM users WHERE id = $1", [
+      req.user.id,
+    ]);
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "User not found" });
     }
