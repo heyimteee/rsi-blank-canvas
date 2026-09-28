@@ -44,7 +44,7 @@ export default function Register() {
         className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm"
       >
         <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Create account</h1>
-        <p className="mt-1 text-sm text-zinc-500">Email only — no Google required</p>
+        <p className="mt-1 text-sm text-zinc-500">Email only, no Google required</p>
 
         {error && (
           <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">

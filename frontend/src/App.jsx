@@ -4,13 +4,16 @@ import Navbar from "./components/Navbar.jsx";
 import Home from "./pages/Home.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
+import Request from "./pages/Request.jsx";
+import Track from "./pages/Track.jsx";
+import RevisionNew from "./pages/RevisionNew.jsx";
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) {
     return (
       <div className="flex min-h-[calc(100vh-56px)] items-center justify-center bg-white">
-        <p className="text-sm text-zinc-500">Checking authentication…</p>
+        <p className="text-sm text-zinc-500">Checking authentication...</p>
       </div>
     );
   }
@@ -23,7 +26,7 @@ function PublicOnlyRoute({ children }) {
   if (loading) {
     return (
       <div className="flex min-h-[calc(100vh-56px)] items-center justify-center bg-white">
-        <p className="text-sm text-zinc-500">Loading…</p>
+        <p className="text-sm text-zinc-500">Loading...</p>
       </div>
     );
   }
@@ -44,6 +47,10 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        <Route path="/request" element={<Request />} />
+        <Route path="/track" element={<Track />} />
+        <Route path="/track/:token" element={<Track />} />
+        <Route path="/revision/new" element={<RevisionNew />} />
         <Route
           path="/login"
           element={
