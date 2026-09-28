@@ -14,8 +14,11 @@ import Requests from "./pages/dashboard/Requests.jsx";
 import RequestDetail from "./pages/dashboard/RequestDetail.jsx";
 import Revisions from "./pages/dashboard/Revisions.jsx";
 import RevisionDetail from "./pages/dashboard/RevisionDetail.jsx";
-import JobPool from "./pages/dashboard/JobPool.jsx";
-import Milestones from "./pages/dashboard/Milestones.jsx";
+import Pool from "./pages/dashboard/Pool.jsx";
+import MyWork from "./pages/dashboard/MyWork.jsx";
+import Jobs from "./pages/dashboard/Jobs.jsx";
+import JobDetail from "./pages/dashboard/JobDetail.jsx";
+import Overview from "./pages/dashboard/Overview.jsx";
 
 function Root() {
   const { isAuthenticated, loading } = useAuth();
@@ -155,19 +158,43 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/dashboard/job-pool"
+          path="/dashboard/pool"
           element={
             <ProtectedRoute>
-              <JobPool />
+              <Pool />
             </ProtectedRoute>
           }
         />
         <Route
-          path="/dashboard/milestones"
+          path="/dashboard/my-work"
           element={
             <ProtectedRoute>
-              <Milestones />
+              <MyWork />
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard/jobs"
+          element={
+            <RequireRole roles={["exc", "admin"]}>
+              <Jobs />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/dashboard/jobs/:id"
+          element={
+            <RequireRole roles={["exc", "admin"]}>
+              <JobDetail />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/dashboard/overview"
+          element={
+            <RequireRole roles={["exc", "admin"]}>
+              <Overview />
+            </RequireRole>
           }
         />
         <Route
