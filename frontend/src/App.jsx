@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
+import { useToast } from "./components/Toast.jsx";
 import Navbar from "./components/Navbar.jsx";
 import Home from "./pages/Home.jsx";
+import Landing from "./pages/Landing.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import Request from "./pages/Request.jsx";
@@ -14,6 +17,19 @@ import RevisionDetail from "./pages/dashboard/RevisionDetail.jsx";
 import JobPool from "./pages/dashboard/JobPool.jsx";
 import Milestones from "./pages/dashboard/Milestones.jsx";
 
+function Root() {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex min-h-[calc(100vh-56px)] items-center justify-center bg-white">
+        <p className="text-sm text-zinc-500">Loading...</p>
+      </div>
+    );
+  }
+  if (isAuthenticated) return <Home />;
+  return <Landing />;
+}
+
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
   if (loading) {
@@ -24,6 +40,25 @@ function ProtectedRoute({ children }) {
     );
   }
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function ClientOnlyRoute({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+  const { push } = useToast();
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      push("Team members use the boards. These pages are for clients.");
+    }
+  }, [loading, isAuthenticated, push]);
+  if (loading) {
+    return (
+      <div className="flex min-h-[calc(100vh-56px)] items-center justify-center bg-white">
+        <p className="text-sm text-zinc-500">Loading...</p>
+      </div>
+    );
+  }
+  if (isAuthenticated) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -42,7 +77,7 @@ function RequireRole({ roles, children }) {
       <main className="mx-auto w-full max-w-xl px-4 py-10">
         <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
           <p className="text-base font-semibold text-zinc-900">Not allowed for your role</p>
-          <p className="mt-1 text-sm text-zinc-500">Ask an admin to update your role if you need access.</p>
+          <p className="mt-1 text-sm text-zinc-500">Ask EXC to update your role if you need access.</p>
         </div>
       </main>
     );
@@ -68,18 +103,25 @@ function AppRoutes() {
     <>
       <Navbar />
       <Routes>
+        <Route path="/" element={<Root />} />
         <Route
-          path="/"
+          path="/request"
           element={
-            <ProtectedRoute>
-              <Home />
-            </ProtectedRoute>
+            <ClientOnlyRoute>
+              <Request />
+            </ClientOnlyRoute>
           }
         />
-        <Route path="/request" element={<Request />} />
         <Route path="/track" element={<Track />} />
         <Route path="/track/:token" element={<Track />} />
-        <Route path="/revision/new" element={<RevisionNew />} />
+        <Route
+          path="/revision/new"
+          element={
+            <ClientOnlyRoute>
+              <RevisionNew />
+            </ClientOnlyRoute>
+          }
+        />
         <Route
           path="/dashboard/requests"
           element={

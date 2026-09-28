@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { navLinks } from "../lib/menus.js";
 
 export default function Navbar() {
   const { isAuthenticated, logout, user } = useAuth();
-  const role = user?.role;
+  const links = navLinks({ isAuthenticated, role: user?.role });
 
   return (
     <nav className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-3">
@@ -15,30 +16,13 @@ export default function Navbar() {
           Blank Canvas
         </Link>
         <div className="ml-4 hidden items-center gap-3 text-sm md:flex">
-          <Link to="/request" className="text-zinc-500 transition hover:text-zinc-900">
-            Request
-          </Link>
-          <Link to="/track" className="text-zinc-500 transition hover:text-zinc-900">
-            Track
-          </Link>
-          <Link to="/revision/new" className="text-zinc-500 transition hover:text-zinc-900">
-            Revise
-          </Link>
-          {isAuthenticated && (role === "exc" || role === "admin") && (
-            <Link to="/dashboard/requests" className="text-zinc-500 transition hover:text-zinc-900">
-              Requests
-            </Link>
-          )}
-          {isAuthenticated && (role === "pm" || role === "admin") && (
-            <Link to="/dashboard/revisions" className="text-zinc-500 transition hover:text-zinc-900">
-              Revisions
-            </Link>
-          )}
-          {isAuthenticated && (
-            <Link to="/dashboard/job-pool" className="text-zinc-500 transition hover:text-zinc-900">
-              Jobs
-            </Link>
-          )}
+          {links
+            .filter((l) => l.to !== "/")
+            .map((l) => (
+              <Link key={l.to} to={l.to} className="text-zinc-500 transition hover:text-zinc-900">
+                {l.label}
+              </Link>
+            ))}
         </div>
         {isAuthenticated && user?.email && (
           <span className="ml-2 hidden text-xs text-zinc-500 lg:inline">· {user.email}</span>
