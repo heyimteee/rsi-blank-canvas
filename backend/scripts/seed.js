@@ -7,8 +7,12 @@ dotenv.config();
 const ACCOUNTS = [
   { email: "exc@bcc.local", role: "exc", full_name: "External Collaboration" },
   { email: "pm@bcc.local", role: "pm", full_name: "Project Manager" },
-  { email: "dev@bcc.local", role: "member", full_name: "Team Member" },
+  { email: "fe@bcc.local", role: "fe", full_name: "Front End Developer" },
+  { email: "be@bcc.local", role: "be", full_name: "Back End Developer" },
+  { email: "pd@bcc.local", role: "pd", full_name: "Product Designer" },
 ];
+
+const RETIRED = ["dev@bcc.local"];
 
 export async function seed() {
   await initDb();
@@ -19,6 +23,9 @@ export async function seed() {
       "INSERT INTO users (email, password_hash, role, full_name) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO UPDATE SET role = EXCLUDED.role, full_name = EXCLUDED.full_name",
       [a.email, hash, a.role, a.full_name]
     );
+  }
+  for (const email of RETIRED) {
+    await pool.query("DELETE FROM users WHERE email = $1", [email]);
   }
   return ACCOUNTS.map((a) => a.email);
 }

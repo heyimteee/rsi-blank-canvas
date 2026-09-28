@@ -23,7 +23,7 @@ test("GET /api/requests/pool/open is visible to member without PII", async () =>
   const id = created.body.id;
   const excToken = await loginAs("exc@bcc.local");
   await request(app).post(`/api/requests/${id}/decision`).set("Authorization", `Bearer ${excToken}`).send({ decision: "accept" });
-  const devToken = await loginAs("dev@bcc.local");
+  const devToken = await loginAs("fe@bcc.local");
   const res = await request(app).get("/api/requests/pool/open").set("Authorization", `Bearer ${devToken}`);
   assert.equal(res.status, 200);
   const found = res.body.items.find((x) => x.id === id);
