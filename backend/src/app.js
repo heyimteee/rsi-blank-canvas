@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import authRoutes from "./routes/auth.js";
 import requestsRoutes from "./routes/requests.js";
 import revisionsRoutes from "./routes/revisions.js";
+import jobsRoutes from "./routes/jobs.js";
 import { requireAuth } from "./middleware/auth.js";
 
 dotenv.config();
@@ -21,6 +22,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/requests", requestsRoutes);
 app.use("/api/revisions", revisionsRoutes);
+app.use("/api/jobs", jobsRoutes);
 
 app.get("/api/protected", requireAuth, (req, res) => {
   res.json({ message: "You are authorized", user: req.user });

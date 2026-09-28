@@ -108,7 +108,35 @@ export async function initDb() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_slots (
+      id SERIAL PRIMARY KEY,
+      service_request_id INT NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('pm', 'fe', 'be', 'pd')),
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'FILLED')),
+      filled_by INT REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE(service_request_id, role)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS applications (
+      id SERIAL PRIMARY KEY,
+      service_request_id INT NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('pm', 'fe', 'be', 'pd')),
+      status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+      decided_by INT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      decided_at TIMESTAMPTZ
+    );
+  `);
+
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_slots_request ON job_slots(service_request_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_slots_filled ON job_slots(filled_by)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_applications_request ON applications(service_request_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_requests_token ON service_requests(tracking_token)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_revisions_request ON revisions(service_request_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_revisions_status ON revisions(status)`);
