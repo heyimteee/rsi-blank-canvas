@@ -6,14 +6,17 @@ export default function Home() {
   const role = user?.role || "member";
 
   const cards = [];
-  if (role === "exc" || role === "admin") {
+  if (role === "exc") {
     cards.push({ to: "/dashboard/requests", title: "Review requests", body: "Accept or reject client submissions." });
+    cards.push({ to: "/dashboard/jobs", title: "Opened jobs", body: "See teams and progress per project." });
+    cards.push({ to: "/dashboard/overview", title: "Tracking board", body: "Every project and its current state." });
+  } else {
+    cards.push({ to: "/dashboard/pool", title: "Job pool", body: "Find an open seat that fits your role." });
+    cards.push({ to: "/dashboard/my-work", title: "My work", body: "Milestones and tasks of your active job." });
+    if (role === "pm") {
+      cards.push({ to: "/dashboard/revisions", title: "Review revisions", body: "Split concerns and update milestones." });
+    }
   }
-  if (role === "pm" || role === "admin") {
-    cards.push({ to: "/dashboard/revisions", title: "Review revisions", body: "Split concerns and update milestones." });
-  }
-  cards.push({ to: "/dashboard/job-pool", title: "Open job pool", body: "See accepted work that needs a team." });
-  cards.push({ to: "/dashboard/milestones", title: "Milestones", body: "Track progress per request." });
 
   return (
     <main className="mx-auto w-full max-w-4xl bg-white px-4 py-10">
