@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/roles.js";
 import { logNotification } from "../lib/notify.js";
 import { sendMail } from "../lib/mailer.js";
+import { ackEmail } from "../lib/templates.js";
 import { pmOfJob } from "./jobs.js";
 
 const router = express.Router();
@@ -15,14 +16,20 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || "");
 }
 
-async function mailRevision(to, revisionId, type, subject, html) {
+async function mailRevision(to, revisionId, type, kind, projectTitle, token) {
+  const built = ackEmail({ kind, projectTitle, token });
   const id = await logNotification({
     recipient_email: to,
     type,
-    payload: { revision_id: revisionId, subject },
+    payload: { revision_id: revisionId, subject: built.subject },
   });
-  await sendMail({ to, subject, html, notifId: id });
+  await sendMail({ to, subject: built.subject, html: built.html, notifId: id });
   return id;
+}
+
+async function projectOf(requestId) {
+  const r = await pool.query("SELECT title, tracking_token FROM service_requests WHERE id = $1", [requestId]);
+  return r.rows[0] || { title: "Your project", tracking_token: null };
 }
 
 router.post("/", async (req, res) => {
@@ -132,7 +139,8 @@ router.post("/:id/decision", requireAuth, requireRole("pm", "admin"), async (req
         req.params.id,
       ]);
       await client.query("COMMIT");
-      await mailRevision(row.client_email, row.id, "REVISION_REJECT_ACK", "Update on your revision", "<p>We could not accept your revision.</p>");
+      const proj = await projectOf(row.service_request_id);
+      await mailRevision(row.client_email, row.id, "REVISION_REJECT_ACK", "revision_rejected", proj.title, proj.tracking_token ? String(proj.tracking_token) : null);
       const done = await pool.query("SELECT status FROM revisions WHERE id = $1", [req.params.id]);
       return res.json({ id: Number(req.params.id), status: done.rows[0].status });
     }
@@ -174,7 +182,8 @@ router.post("/:id/decision", requireAuth, requireRole("pm", "admin"), async (req
     }
     await client.query("UPDATE revisions SET status = 'ACCEPTED_NOTIFIED' WHERE id = $1", [req.params.id]);
     await client.query("COMMIT");
-    await mailRevision(row.client_email, row.id, "REVISION_ACCEPT_ACK", "Your revision was accepted", "<p>Milestones were updated for your revision.</p>");
+    const proj = await projectOf(row.service_request_id);
+    await mailRevision(row.client_email, row.id, "REVISION_ACCEPT_ACK", "revision_accepted", proj.title, proj.tracking_token ? String(proj.tracking_token) : null);
     await logNotification({ recipient_email: null, type: "MEMBER_REVISION_NOTICE", payload: { revision_id: row.id } });
     const done = await pool.query("SELECT status FROM revisions WHERE id = $1", [req.params.id]);
     return res.json({ id: Number(req.params.id), status: done.rows[0].status });

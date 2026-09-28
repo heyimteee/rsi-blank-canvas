@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/roles.js";
 import { logNotification } from "../lib/notify.js";
 import { sendMail } from "../lib/mailer.js";
+import { ackEmail } from "../lib/templates.js";
 
 const router = express.Router();
 
@@ -20,9 +21,10 @@ function validateSubmit(b) {
   return null;
 }
 
-async function mail(to, type, subject, html) {
-  const id = await logNotification({ recipient_email: to, type, payload: { subject } });
-  await sendMail({ to, subject, html, notifId: id });
+async function mail(to, type, kind, projectTitle, token) {
+  const built = ackEmail({ kind, projectTitle, token });
+  const id = await logNotification({ recipient_email: to, type, payload: { subject: built.subject } });
+  await sendMail({ to, subject: built.subject, html: built.html, notifId: id });
   return id;
 }
 
@@ -47,7 +49,7 @@ router.post("/", async (req, res) => {
     );
     const row = r.rows[0];
     await pool.query("UPDATE service_requests SET status = 'ACK_SENT' WHERE id = $1", [row.id]);
-    await mail(email, "INITIAL_ACK", "We received your request", `<p>Thanks. Your tracking token is ${row.tracking_token}.</p>`);
+    await mail(email, "INITIAL_ACK", "initial", String(b.title).trim(), String(row.tracking_token));
     await logNotification({ recipient_email: null, type: "EXC_REVIEW_NOTIFY", payload: { request_id: row.id } });
     await pool.query("UPDATE service_requests SET status = 'PENDING_DECISION' WHERE id = $1", [row.id]);
     return res.status(201).json({ id: row.id, tracking_token: row.tracking_token, status: "PENDING_DECISION" });
@@ -194,7 +196,7 @@ router.post("/:id/decision", requireAuth, requireRole("exc", "admin"), async (re
         );
       }
       await client.query("COMMIT");
-      await mail(row.client_email, "ACCEPTANCE_ACK", "Your request was accepted", "<p>Your request was accepted and the job pool is now open.</p>");
+      await mail(row.client_email, "ACCEPTANCE_ACK", "accepted", row.title, String(row.tracking_token));
       await logNotification({ recipient_email: null, type: "JOB_POOL_BROADCAST", payload: { request_id: row.id } });
       const done = await pool.query("SELECT status FROM service_requests WHERE id = $1", [req.params.id]);
       return res.json({ id: Number(req.params.id), status: done.rows[0].status });
@@ -204,7 +206,7 @@ router.post("/:id/decision", requireAuth, requireRole("exc", "admin"), async (re
       [req.user.id, notes, req.params.id]
     );
     await client.query("COMMIT");
-    await mail(row.client_email, "REJECTION_ACK", "Update on your request", "<p>We could not take your request at this time.</p>");
+    await mail(row.client_email, "REJECTION_ACK", "rejected", row.title, String(row.tracking_token));
     return res.json({ id: Number(req.params.id), status: "REJECTED" });
   } catch {
     try {
