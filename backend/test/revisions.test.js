@@ -105,14 +105,14 @@ test("PM reject ends flow with client ack", async () => {
   const again = await request(app)
     .post(`/api/revisions/${id}/decision`)
     .set("Authorization", `Bearer ${pmToken}`)
-    .send({ decision: "accept", separated_concerns: [{ title: "x" }], milestones: [{ title: "y" }] });
+    .send({ decision: "accept" });
   assert.equal(again.status, 409);
   await pool.query("DELETE FROM notifications WHERE payload->>'revision_id' = $1", [String(id)]);
   await cleanupRequest(created.id, [clientEmail]);
   await pool.query("DELETE FROM users WHERE email LIKE $1", [`%-${stamp}@example.com`]);
 });
 
-test("PM accept updates milestones and notifies all", async () => {
+test("PM accept notifies all without creating milestones", async () => {
   const stamp = Date.now();
   const clientEmail = `acc-${stamp}@example.com`;
   const { token: pmToken } = await makeUser(`pma-${stamp}@example.com`, "pm");
@@ -122,27 +122,16 @@ test("PM accept updates milestones and notifies all", async () => {
     service_request_id: created.id,
     client_email: clientEmail,
     general_details: "Update checkout copy",
-    terms: "Minor copy change",
   });
   const id = rev.body.id;
-  const badAccept = await request(app)
-    .post(`/api/revisions/${id}/decision`)
-    .set("Authorization", `Bearer ${pmToken}`)
-    .send({ decision: "accept", separated_concerns: [], milestones: [] });
-  assert.equal(badAccept.status, 400);
   const done = await request(app)
     .post(`/api/revisions/${id}/decision`)
     .set("Authorization", `Bearer ${pmToken}`)
-    .send({
-      decision: "accept",
-      separated_concerns: [{ title: "Copy", note: "Hero" }],
-      milestones: [{ title: "Hero copy v2", description: "Rewrite hero" }],
-    });
+    .send({ decision: "accept" });
   assert.equal(done.status, 200);
   assert.equal(done.body.status, "ACCEPTED_NOTIFIED");
   const ms = await pool.query("SELECT * FROM milestones WHERE service_request_id = $1", [created.id]);
-  assert.equal(ms.rows.length, 1);
-  assert.equal(ms.rows[0].revision_id, id);
+  assert.equal(ms.rows.length, 0);
   const notes = await pool.query("SELECT type FROM notifications WHERE recipient_email = $1", [clientEmail]);
   assert.ok(notes.rows.map((r) => r.type).includes("REVISION_ACCEPT_ACK"));
   await pool.query("DELETE FROM notifications WHERE payload->>'revision_id' = $1", [String(id)]);
