@@ -11,6 +11,7 @@ import { pmOfJob } from "./jobs.js";
 const router = express.Router();
 
 const TERMINAL = ["REJECTED", "REJECTED_NOTIFIED", "ACCEPTED_NOTIFIED", "LOGGED"];
+const DEFAULT_REJECT_REASON = "Not within current project scope.";
 const MILESTONE_STATUS = ["OPEN", "IN_PROGRESS", "DONE", "REVISED"];
 const TASK_STATUS = ["OPEN", "IN_PROGRESS", "DONE"];
 
@@ -185,10 +186,13 @@ router.get("/:id", requireAuth, requireRole("pm", "admin"), async (req, res) => 
 });
 
 router.post("/:id/decision", requireAuth, requireRole("pm", "admin"), async (req, res) => {
-  const decision = req.body && req.body.decision;
+  const b = req.body || {};
+  const decision = b.decision;
   if (decision !== "accept" && decision !== "reject") {
     return res.status(400).json({ message: "Decision must be accept or reject" });
   }
+  const givenReason = b.reason !== undefined && b.reason !== null ? String(b.reason).trim() : "";
+  const reason = decision === "reject" ? givenReason || DEFAULT_REJECT_REASON : null;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -202,60 +206,18 @@ router.post("/:id/decision", requireAuth, requireRole("pm", "admin"), async (req
       await client.query("ROLLBACK");
       return res.status(409).json({ message: "Decision already recorded" });
     }
-    if (decision === "reject") {
-      await client.query("UPDATE revisions SET status = 'REJECTED', decided_by = $1 WHERE id = $2", [
-        req.user.id,
-        req.params.id,
-      ]);
-      await client.query("COMMIT");
-      const proj = await projectOf(row.service_request_id);
-      await mailRevision(row.client_email, row.id, "REVISION_REJECT_ACK", "revision_rejected", proj.title, proj.tracking_token ? String(proj.tracking_token) : null);
-      const done = await pool.query("SELECT status FROM revisions WHERE id = $1", [req.params.id]);
-      return res.json({ id: Number(req.params.id), status: done.rows[0].status });
-    }
-    const concerns = req.body.separated_concerns;
-    const milestones = req.body.milestones;
-    if (!Array.isArray(concerns) || concerns.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ message: "separated_concerns must be a non empty array" });
-    }
-    if (!Array.isArray(milestones) || milestones.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ message: "milestones must be a non empty array" });
-    }
-    for (const m of milestones) {
-      if (!m || !m.title || String(m.title).trim().length < 3) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ message: "Each milestone needs a title of at least 3 characters" });
-      }
-    }
-    await client.query("UPDATE revisions SET status = 'SEPARATED', separated_concerns = $1, decided_by = $2 WHERE id = $3", [
-      JSON.stringify(concerns),
-      req.user.id,
-      req.params.id,
-    ]);
-    let order = 0;
-    for (const m of milestones) {
-      order += 1;
-      await client.query(
-        "INSERT INTO milestones (service_request_id, revision_id, title, description, due_date, status, sort_order) VALUES ($1, $2, $3, $4, $5, 'OPEN', $6)",
-        [
-          row.service_request_id,
-          row.id,
-          String(m.title).trim(),
-          m.description ? String(m.description) : null,
-          m.due_date || null,
-          order,
-        ]
-      );
-    }
-    await client.query("UPDATE revisions SET status = 'ACCEPTED_NOTIFIED' WHERE id = $1", [req.params.id]);
+    const nextStatus = decision === "accept" ? "ACCEPTED_NOTIFIED" : "REJECTED";
+    await client.query(
+      "UPDATE revisions SET status = $1, decided_by = $2, decision_notes = $3, decided_at = NOW() WHERE id = $4",
+      [nextStatus, req.user.id, reason, req.params.id]
+    );
     await client.query("COMMIT");
     const proj = await projectOf(row.service_request_id);
-    await mailRevision(row.client_email, row.id, "REVISION_ACCEPT_ACK", "revision_accepted", proj.title, proj.tracking_token ? String(proj.tracking_token) : null);
-    await logNotification({ recipient_email: null, type: "MEMBER_REVISION_NOTICE", payload: { revision_id: row.id } });
-    const done = await pool.query("SELECT status FROM revisions WHERE id = $1", [req.params.id]);
-    return res.json({ id: Number(req.params.id), status: done.rows[0].status });
+    const kind = decision === "accept" ? "revision_accepted" : "revision_rejected";
+    const type = decision === "accept" ? "REVISION_ACCEPT_ACK" : "REVISION_REJECT_ACK";
+    await mailRevision(row.client_email, row.id, type, kind, proj.title, proj.tracking_token ? String(proj.tracking_token) : null);
+    await logNotification({ recipient_email: null, type: "MEMBER_REVISION_NOTICE", payload: { revision_id: row.id, outcome: decision } });
+    return res.json({ id: Number(req.params.id), status: nextStatus, reason });
   } catch {
     try {
       await client.query("ROLLBACK");

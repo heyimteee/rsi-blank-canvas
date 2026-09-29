@@ -88,17 +88,25 @@ test("exc full detail and whole project delete", async () => {
     service_request_id: created.id,
     client_email: `del-${stamp}@example.com`,
     general_details: "Change footer copy everywhere",
-    terms: "Minor change",
   });
   await request(app)
     .post(`/api/revisions/${rev.body.id}/decision`)
     .set("Authorization", `Bearer ${pmToken}`)
-    .send({ decision: "accept", separated_concerns: [{ title: "Footer" }], milestones: [{ title: "Footer v2" }] });
+    .send({ decision: "accept" });
+  const seeded = await pool.query(
+    "INSERT INTO milestones (service_request_id, revision_id, title, status, sort_order) VALUES ($1, $2, $3, 'OPEN', 1) RETURNING id",
+    [created.id, rev.body.id, "Footer v2"]
+  );
+  await pool.query("INSERT INTO tasks (milestone_id, title, status) VALUES ($1, $2, 'OPEN')", [
+    seeded.rows[0].id,
+    "Rewrite footer",
+  ]);
   const full = await request(app).get(`/api/requests/${created.id}/full`).set("Authorization", `Bearer ${excToken}`);
   assert.equal(full.status, 200);
   assert.equal(full.body.request.id, created.id);
   assert.equal(full.body.slots.length, 4);
   assert.equal(full.body.milestones.length, 1);
+  assert.equal(full.body.tasks.length, 1);
   assert.equal(full.body.revisions.length, 1);
   const forbidden = await request(app).get(`/api/requests/${created.id}/full`).set("Authorization", `Bearer ${pmToken}`);
   assert.equal(forbidden.status, 403);
