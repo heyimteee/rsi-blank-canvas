@@ -4,6 +4,7 @@ import request from "supertest";
 import jwt from "jsonwebtoken";
 import { app } from "../src/app.js";
 import { pool, initDb } from "../src/db.js";
+import { requestTerms, revisionTerms } from "./support.js";
 
 async function makeUser(email, role) {
   await initDb();
@@ -26,6 +27,7 @@ async function fillSeat(requestId, excToken, userToken, userId) {
 
 async function makeAcceptedRequest(clientEmail, excToken) {
   const created = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Work Client",
     client_email: clientEmail,
     title: "Work project",
@@ -82,6 +84,7 @@ test("exc full detail and whole project delete", async () => {
   const created = await makeAcceptedRequest(`del-${stamp}@example.com`, excToken);
   await fillSeat(created.id, excToken, pmToken, pmUser.id);
   const rev = await request(app).post("/api/revisions").send({
+    ...revisionTerms(),
     service_request_id: created.id,
     client_email: `del-${stamp}@example.com`,
     general_details: "Change footer copy everywhere",
@@ -119,6 +122,7 @@ test("revision lookup by tracking token is public", async () => {
   const { token: excToken } = await makeUser(`exct-${stamp}@example.com`, "exc");
   const created = await makeAcceptedRequest(`tk-${stamp}@example.com`, excToken);
   await request(app).post("/api/revisions").send({
+    ...revisionTerms(),
     service_request_id: created.id,
     client_email: `tk-${stamp}@example.com`,
     general_details: "Tweak about page layout grid",

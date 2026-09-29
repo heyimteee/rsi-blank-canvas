@@ -5,6 +5,7 @@ import { requireRole } from "../middleware/roles.js";
 import { logNotification } from "../lib/notify.js";
 import { sendMail } from "../lib/mailer.js";
 import { ackEmail } from "../lib/templates.js";
+import { isIsoDate, todayIso, isPositiveAmount, CURRENCIES } from "../lib/terms.js";
 import { pmOfJob } from "./jobs.js";
 
 const router = express.Router();
@@ -12,14 +13,6 @@ const router = express.Router();
 const TERMINAL = ["REJECTED", "REJECTED_NOTIFIED", "ACCEPTED_NOTIFIED", "LOGGED"];
 const MILESTONE_STATUS = ["OPEN", "IN_PROGRESS", "DONE", "REVISED"];
 const TASK_STATUS = ["OPEN", "IN_PROGRESS", "DONE"];
-
-function isIsoDate(s) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 async function holdsSeat(requestId, userId) {
   const r = await pool.query(
@@ -63,15 +56,28 @@ router.post("/", async (req, res) => {
   if (!isValidEmail(String(b.client_email || "").toLowerCase())) return res.status(400).json({ message: "Valid client email is required" });
   if (!b.general_details || String(b.general_details).trim().length < 10)
     return res.status(400).json({ message: "General details must be at least 10 characters" });
-  if (!b.terms || String(b.terms).trim().length < 4)
-    return res.status(400).json({ message: "Terms must be at least 4 characters" });
+  if (!isIsoDate(b.delivery_date)) return res.status(400).json({ message: "Delivery date must use the format YYYY-MM-DD" });
+  if (String(b.delivery_date) < todayIso()) return res.status(400).json({ message: "Delivery date cannot be in the past" });
+  if (!isPositiveAmount(b.new_budget_amount))
+    return res.status(400).json({ message: "New total budget must be a positive number" });
+  if (!isPositiveAmount(b.added_cost_amount)) return res.status(400).json({ message: "Added cost must be a positive number" });
+  if (!CURRENCIES.includes(b.budget_currency)) return res.status(400).json({ message: "Budget currency must be IDR or USD" });
   try {
     const exists = await pool.query("SELECT id FROM service_requests WHERE id = $1", [service_request_id]);
     if (exists.rows.length === 0) return res.status(404).json({ message: "Service request not found" });
     const email = String(b.client_email).toLowerCase();
     const r = await pool.query(
-      "INSERT INTO revisions (service_request_id, client_email, general_details, terms, status) VALUES ($1, $2, $3, $4, 'NOTIFIED_PM') RETURNING id, status",
-      [service_request_id, email, String(b.general_details).trim(), String(b.terms).trim()]
+      "INSERT INTO revisions (service_request_id, client_email, general_details, terms, delivery_date, new_budget_amount, added_cost_amount, budget_currency, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'NOTIFIED_PM') RETURNING id, status",
+      [
+        service_request_id,
+        email,
+        String(b.general_details).trim(),
+        b.terms ? String(b.terms).trim() : null,
+        String(b.delivery_date),
+        Number(b.new_budget_amount),
+        Number(b.added_cost_amount),
+        String(b.budget_currency),
+      ]
     );
     const id = r.rows[0].id;
     await logNotification({ recipient_email: null, type: "PM_REVIEW_NOTIFY", payload: { revision_id: id } });

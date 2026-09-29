@@ -5,6 +5,7 @@ import { requireRole } from "../middleware/roles.js";
 import { logNotification } from "../lib/notify.js";
 import { sendMail } from "../lib/mailer.js";
 import { ackEmail } from "../lib/templates.js";
+import { isIsoDate, todayIso, CURRENCIES } from "../lib/terms.js";
 
 const router = express.Router();
 
@@ -18,6 +19,11 @@ function validateSubmit(b) {
   if (!isValidEmail(String(b.client_email || "").toLowerCase())) return "Valid client email is required";
   if (!b.title || String(b.title).trim().length < 4) return "Title must be at least 4 characters";
   if (!b.details || String(b.details).trim().length < 10) return "Details must be at least 10 characters";
+  const amount = Number(b.budget_amount);
+  if (!Number.isFinite(amount) || amount <= 0) return "Budget amount must be a positive number";
+  if (!CURRENCIES.includes(b.budget_currency)) return "Budget currency must be IDR or USD";
+  if (!isIsoDate(b.deadline)) return "Deadline must use the format YYYY-MM-DD";
+  if (String(b.deadline) < todayIso()) return "Deadline cannot be in the past";
   return null;
 }
 
@@ -35,7 +41,7 @@ router.post("/", async (req, res) => {
   const email = String(b.client_email).toLowerCase();
   try {
     const r = await pool.query(
-      "INSERT INTO service_requests (client_name, client_email, client_org, title, details, budget_range, timeline, attachment_url, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'RECEIVED') RETURNING id, tracking_token, status",
+      "INSERT INTO service_requests (client_name, client_email, client_org, title, details, budget_range, timeline, attachment_url, budget_amount, budget_currency, deadline, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'RECEIVED') RETURNING id, tracking_token, status",
       [
         String(b.client_name).trim(),
         email,
@@ -45,6 +51,9 @@ router.post("/", async (req, res) => {
         b.budget_range ? String(b.budget_range) : null,
         b.timeline ? String(b.timeline) : null,
         b.attachment_url ? String(b.attachment_url) : null,
+        Number(b.budget_amount),
+        String(b.budget_currency),
+        String(b.deadline),
       ]
     );
     const row = r.rows[0];

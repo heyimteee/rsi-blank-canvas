@@ -4,6 +4,7 @@ import request from "supertest";
 import jwt from "jsonwebtoken";
 import { app } from "../src/app.js";
 import { pool, initDb } from "../src/db.js";
+import { requestTerms, revisionTerms } from "./support.js";
 
 async function makeUser(email, role) {
   await initDb();
@@ -27,6 +28,7 @@ test("POST /api/requests creates request with acks logged", async () => {
   await initDb();
   const email = `intake-${Date.now()}@example.com`;
   const res = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Intake Client",
     client_email: email,
     title: "Company website",
@@ -45,6 +47,7 @@ test("POST /api/requests creates request with acks logged", async () => {
 
 test("POST /api/requests rejects bad input", async () => {
   const badEmail = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "A",
     client_email: "not-an-email",
     title: "T",
@@ -58,6 +61,7 @@ test("POST /api/requests rejects bad input", async () => {
 test("GET /api/requests/track/:token is public", async () => {
   const email = `track-${Date.now()}@example.com`;
   const created = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Track Client",
     client_email: email,
     title: "Track title",
@@ -78,6 +82,7 @@ test("EXC decision accept opens job pool once only", async () => {
   const { token: excToken } = await makeUser(`exc-${stamp}@example.com`, "exc");
   const { token: memberToken } = await makeUser(`member-${stamp}@example.com`, "member");
   const created = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Decide Client",
     client_email: clientEmail,
     title: "Decide title",
@@ -115,6 +120,7 @@ test("EXC decision reject notifies client", async () => {
   const clientEmail = `reject-${stamp}@example.com`;
   const { token: excToken } = await makeUser(`excr-${stamp}@example.com`, "exc");
   const created = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Reject Client",
     client_email: clientEmail,
     title: "Reject title",

@@ -171,6 +171,14 @@ export async function initDb() {
   `);
 
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline DATE`);
+  await pool.query(`ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS budget_amount NUMERIC(14, 2)`);
+  await pool.query(`ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS budget_currency TEXT`);
+  await pool.query(`ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS deadline DATE`);
+  await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS delivery_date DATE`);
+  await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS new_budget_amount NUMERIC(14, 2)`);
+  await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS added_cost_amount NUMERIC(14, 2)`);
+  await pool.query(`ALTER TABLE revisions ADD COLUMN IF NOT EXISTS budget_currency TEXT`);
+  await pool.query(`ALTER TABLE revisions ALTER COLUMN terms DROP NOT NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_milestone ON tasks(milestone_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id)`);

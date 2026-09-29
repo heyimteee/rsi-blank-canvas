@@ -4,6 +4,7 @@ import request from "supertest";
 import jwt from "jsonwebtoken";
 import { app } from "../src/app.js";
 import { pool, initDb } from "../src/db.js";
+import { requestTerms, revisionTerms } from "./support.js";
 
 async function makeUser(email, role) {
   await initDb();
@@ -19,6 +20,7 @@ async function makeUser(email, role) {
 
 async function makeAcceptedRequest(clientEmail, excToken) {
   const created = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Seat Client",
     client_email: clientEmail,
     title: "Seat project",

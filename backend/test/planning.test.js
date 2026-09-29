@@ -4,6 +4,7 @@ import request from "supertest";
 import jwt from "jsonwebtoken";
 import { app } from "../src/app.js";
 import { pool, initDb } from "../src/db.js";
+import { requestTerms, revisionTerms } from "./support.js";
 
 const iso = (daysFromNow) => {
   const d = new Date();
@@ -36,6 +37,7 @@ async function makeJob(stamp) {
   const { token: pmToken, user: pmUser } = await makeUser(`pm-${stamp}@example.com`, "pm");
   const { token: feToken, user: feUser } = await makeUser(`fe-${stamp}@example.com`, "fe");
   const created = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Plan Client",
     client_email: `plan-${stamp}@example.com`,
     title: "Plan project",
