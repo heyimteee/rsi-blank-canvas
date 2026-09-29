@@ -38,8 +38,16 @@ export function listMilestones(token, requestId) {
   return apiFetch(`/api/revisions/request/${requestId}/milestones`, { token });
 }
 
-export function updateMilestone(token, mid, status) {
-  return apiFetch(`/api/revisions/milestones/${mid}`, { method: "PUT", token, body: { status } });
+export function createMilestone(token, requestId, payload) {
+  return apiFetch(`/api/revisions/request/${requestId}/milestones`, { method: "POST", token, body: payload });
+}
+
+export function updateMilestone(token, mid, payload) {
+  return apiFetch(`/api/revisions/milestones/${mid}`, { method: "PUT", token, body: payload });
+}
+
+export function deleteTask(token, taskId) {
+  return apiFetch(`/api/revisions/tasks/${taskId}`, { method: "DELETE", token });
 }
 
 export function listJobPool(token) {
@@ -84,10 +92,6 @@ export function kickSeat(token, slotId) {
 
 export function completeJob(token, requestId) {
   return apiFetch(`/api/jobs/${requestId}/complete`, { method: "POST", token, body: {} });
-}
-
-export function listTasks(token, milestoneId) {
-  return apiFetch(`/api/revisions/milestones/${milestoneId}/tasks`, { token });
 }
 
 export function createTask(token, milestoneId, payload) {
