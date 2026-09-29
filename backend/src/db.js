@@ -5,6 +5,8 @@ dotenv.config();
 
 const { Pool } = pg;
 
+pg.types.setTypeParser(1082, (v) => v);
+
 if (!process.env.DATABASE_URL) {
   console.warn("[db] DATABASE_URL not set, using default postgres://postgres:postgres@localhost:5432/rsi_db");
 }
@@ -168,6 +170,7 @@ export async function initDb() {
     );
   `);
 
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline DATE`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_milestone ON tasks(milestone_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id)`);
