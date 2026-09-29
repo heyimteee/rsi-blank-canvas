@@ -4,6 +4,7 @@ import request from "supertest";
 import jwt from "jsonwebtoken";
 import { app } from "../src/app.js";
 import { pool, initDb } from "../src/db.js";
+import { requestTerms, revisionTerms } from "./support.js";
 
 async function loginAs(email) {
   const r = await pool.query("SELECT id, email, role FROM users WHERE email = $1", [email]);
@@ -15,6 +16,7 @@ test("GET /api/requests/pool/open is visible to member without PII", async () =>
   const stamp = Date.now();
   const clientEmail = `pool-${stamp}@example.com`;
   const created = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Pool Client",
     client_email: clientEmail,
     title: "Pool project",

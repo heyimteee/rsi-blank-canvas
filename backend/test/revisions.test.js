@@ -4,6 +4,7 @@ import request from "supertest";
 import jwt from "jsonwebtoken";
 import { app } from "../src/app.js";
 import { pool, initDb } from "../src/db.js";
+import { requestTerms, revisionTerms } from "./support.js";
 
 async function makeUser(email, role) {
   await initDb();
@@ -21,6 +22,7 @@ async function makeUser(email, role) {
 
 async function makeAcceptedRequest(clientEmail) {
   const created = await request(app).post("/api/requests").send({
+    ...requestTerms(),
     client_name: "Rev Client",
     client_email: clientEmail,
     title: "Revision project",
@@ -44,6 +46,7 @@ test("POST /api/revisions creates revision and notifies PM", async () => {
   const clientEmail = `rev-${stamp}@example.com`;
   const created = await makeAcceptedRequest(clientEmail);
   const res = await request(app).post("/api/revisions").send({
+    ...revisionTerms(),
     service_request_id: created.id,
     client_email: clientEmail,
     general_details: "Change hero copy and pricing table",
@@ -61,6 +64,7 @@ test("POST /api/revisions creates revision and notifies PM", async () => {
 
 test("POST /api/revisions rejects bad input", async () => {
   const bad = await request(app).post("/api/revisions").send({
+    ...revisionTerms(),
     service_request_id: 999999,
     client_email: "bad",
     general_details: "x",
@@ -76,6 +80,7 @@ test("PM reject ends flow with client ack", async () => {
   const { token: memberToken } = await makeUser(`mem-${stamp}@example.com`, "member");
   const created = await makeAcceptedRequest(clientEmail);
   const rev = await request(app).post("/api/revisions").send({
+    ...revisionTerms(),
     service_request_id: created.id,
     client_email: clientEmail,
     general_details: "Add dark mode",
@@ -113,6 +118,7 @@ test("PM accept updates milestones and notifies all", async () => {
   const { token: pmToken } = await makeUser(`pma-${stamp}@example.com`, "pm");
   const created = await makeAcceptedRequest(clientEmail);
   const rev = await request(app).post("/api/revisions").send({
+    ...revisionTerms(),
     service_request_id: created.id,
     client_email: clientEmail,
     general_details: "Update checkout copy",
