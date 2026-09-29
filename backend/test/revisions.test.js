@@ -150,10 +150,10 @@ test("milestone read and update guard roles", async () => {
   const { token: pmToken } = await makeUser(`pmm-${stamp}@example.com`, "pm");
   const { token: memberToken } = await makeUser(`memm-${stamp}@example.com`, "member");
   const created = await makeAcceptedRequest(clientEmail);
-  const list = await request(app)
+  const outsider = await request(app)
     .get(`/api/revisions/request/${created.id}/milestones`)
     .set("Authorization", `Bearer ${memberToken}`);
-  assert.equal(list.status, 200);
+  assert.equal(outsider.status, 403);
   const noAuth = await request(app).get(`/api/revisions/request/${created.id}/milestones`);
   assert.equal(noAuth.status, 401);
   const ins = await pool.query(
@@ -161,6 +161,10 @@ test("milestone read and update guard roles", async () => {
     [created.id, "M1"]
   );
   const mid = ins.rows[0].id;
+  const onJob = await request(app)
+    .get(`/api/revisions/request/${created.id}/milestones`)
+    .set("Authorization", `Bearer ${pmToken}`);
+  assert.equal(onJob.status, 200);
   const forbidden = await request(app)
     .put(`/api/revisions/milestones/${mid}`)
     .set("Authorization", `Bearer ${memberToken}`)
@@ -172,6 +176,8 @@ test("milestone read and update guard roles", async () => {
     .send({ status: "IN_PROGRESS" });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.status, "IN_PROGRESS");
+  await pool.query("DELETE FROM tasks WHERE milestone_id = $1", [mid]);
+  await pool.query("DELETE FROM milestones WHERE id = $1", [mid]);
   await cleanupRequest(created.id, [clientEmail]);
   await pool.query("DELETE FROM users WHERE email LIKE $1", [`%-${stamp}@example.com`]);
 });
