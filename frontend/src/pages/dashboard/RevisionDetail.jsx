@@ -4,10 +4,21 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { useToast } from "../../components/Toast.jsx";
 import StatusBadge from "../../components/StatusBadge.jsx";
 import Skeleton from "../../components/Skeleton.jsx";
-import Confirm from "../../components/Confirm.jsx";
 import Field, { inputCls } from "../../components/Field.jsx";
 import { getRevision, decideRevision } from "../../lib/dashboard.js";
-import { splitConcerns, validateMilestones } from "../../lib/review.js";
+
+const DEFAULT_REASON = "Not within current project scope.";
+
+function formatAmount(amount, currency) {
+  if (amount === null || amount === undefined || amount === "") return "Not set";
+  const n = Number(amount);
+  const locale = currency === "USD" ? "en-US" : "id-ID";
+  try {
+    return new Intl.NumberFormat(locale, { style: "currency", currency: currency || "IDR", maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `${currency || ""} ${n.toLocaleString(locale)}`.trim();
+  }
+}
 
 export default function RevisionDetail() {
   const { id } = useParams();
@@ -15,65 +26,39 @@ export default function RevisionDetail() {
   const { push } = useToast();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
-  const [concernsText, setConcernsText] = useState("");
-  const [milestones, setMilestones] = useState([{ title: "", description: "" }]);
+  const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [confirmReject, setConfirmReject] = useState(false);
+  const [pending, setPending] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      setData(await getRevision(token, id));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        setData(await getRevision(token, id));
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
     load();
   }, [token, id]);
 
-  function setMilestone(i, key, value) {
-    setMilestones((prev) => prev.map((m, idx) => (idx === i ? { ...m, [key]: value } : m)));
-  }
-
-  async function accept() {
-    const concerns = splitConcerns(concernsText);
-    if (concerns.length === 0) {
-      setError("Split the revision into at least one concern, one per line.");
-      return;
-    }
-    const clean = milestones.map((m) => ({ title: m.title.trim(), description: m.description.trim() || undefined }));
-    const msg = validateMilestones(clean);
-    if (msg) {
-      setError(msg);
-      return;
-    }
+  async function decide() {
+    const decision = pending;
     setBusy(true);
     setError("");
     try {
-      const out = await decideRevision(token, id, { decision: "accept", separated_concerns: concerns, milestones: clean });
-      setData((d) => ({ ...d, status: out.status }));
-      push("Revision accepted. Milestones updated and team notified.");
-    } catch (err) {
-      setError(err.message);
-      push(err.message, "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function reject() {
-    setBusy(true);
-    setError("");
-    try {
-      const out = await decideRevision(token, id, { decision: "reject" });
-      setData((d) => ({ ...d, status: out.status }));
-      push("Revision rejected. Client notified.");
-      setConfirmReject(false);
+      const out = await decideRevision(token, id, {
+        decision,
+        reason: decision === "reject" ? reason.trim() || undefined : undefined,
+      });
+      setData((d) => ({ ...d, status: out.status, decision_notes: out.reason }));
+      push(decision === "accept" ? "Revision accepted. Client notified." : "Revision rejected. Client notified.");
+      setPending(null);
     } catch (err) {
       setError(err.message);
       push(err.message, "error");
@@ -125,83 +110,107 @@ export default function RevisionDetail() {
           </h1>
           <StatusBadge status={data.status} />
         </div>
-        <p className="mt-4 text-sm leading-relaxed text-zinc-700">{data.general_details}</p>
-        <p className="mt-2 text-sm text-zinc-500">Terms: {data.terms}</p>
+
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">What the client wants changed</p>
+          <p className="mt-1 text-sm leading-relaxed text-zinc-700">{data.general_details}</p>
+        </div>
+
+        <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Expected delivery</dt>
+            <dd className="mt-1 text-sm text-zinc-900 tabular-nums">{data.delivery_date || "Not set"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-zinc-500">New total budget</dt>
+            <dd className="mt-1 text-sm text-zinc-900 tabular-nums">{formatAmount(data.new_budget_amount, data.budget_currency)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Added cost</dt>
+            <dd className="mt-1 text-sm text-zinc-900 tabular-nums">{formatAmount(data.added_cost_amount, data.budget_currency)}</dd>
+          </div>
+        </dl>
+
+        {decided && (
+          <div className="mt-4 rounded-xl bg-zinc-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Recorded reason</p>
+            <p className="mt-1 text-sm text-zinc-700">{data.decision_notes || "No reason recorded."}</p>
+          </div>
+        )}
+
         {error && (
           <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
             {error}
           </div>
         )}
+
         {!decided && (
           <div className="mt-6 flex flex-col gap-4">
-            <Field label="Separated concerns" helper="One concern per line. Each becomes a work item.">
+            <Field label="Reason for rejection (optional)" helper={`Leave this empty and the client sees: ${DEFAULT_REASON}`}>
               <textarea
-                className={`${inputCls} min-h-24`}
-                value={concernsText}
-                onChange={(e) => setConcernsText(e.target.value)}
-                placeholder={"Copy changes\nPricing table update"}
+                className={`${inputCls} min-h-20`}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Explain briefly why this revision cannot be taken"
               />
             </Field>
-            <div>
-              <p className="text-sm font-medium text-zinc-700">Milestones</p>
-              <div className="mt-2 flex flex-col gap-2">
-                {milestones.map((m, i) => (
-                  <div key={i} className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 p-3">
-                    <input
-                      className={inputCls}
-                      value={m.title}
-                      onChange={(e) => setMilestone(i, "title", e.target.value)}
-                      placeholder={`Milestone ${i + 1} title`}
-                    />
-                    <input
-                      className={inputCls}
-                      value={m.description}
-                      onChange={(e) => setMilestone(i, "description", e.target.value)}
-                      placeholder="Short description (optional)"
-                    />
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => setMilestones((prev) => [...prev, { title: "", description: "" }])}
-                className="mt-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
-              >
-                Add milestone
-              </button>
-            </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
                 disabled={busy}
-                onClick={accept}
+                onClick={() => setPending("accept")}
                 className="flex-1 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 active:scale-[0.98] disabled:opacity-50"
               >
-                {busy ? "Working..." : "Accept and update milestones"}
+                Accept revision
               </button>
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => setConfirmReject(true)}
+                onClick={() => setPending("reject")}
                 className="flex-1 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-700 transition hover:bg-red-50 active:scale-[0.98] disabled:opacity-50"
               >
-                Reject
+                Reject revision
               </button>
             </div>
           </div>
         )}
-        {decided && <p className="mt-6 text-sm text-zinc-500">Decision recorded. No further action needed.</p>}
       </div>
-      {confirmReject && (
-        <Confirm
-          title={`Reject revision #${data.id}?`}
-          body="The client gets a rejection email. This cannot be undone."
-          confirmLabel="Reject revision"
-          tone="danger"
-          busy={busy}
-          onCancel={() => setConfirmReject(false)}
-          onConfirm={reject}
-        />
+
+      {pending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <p className="text-base font-semibold text-zinc-900">
+              {pending === "accept" ? `Accept revision #${data.id}?` : `Reject revision #${data.id}?`}
+            </p>
+            <p className="mt-1 text-sm text-zinc-500">
+              {pending === "accept"
+                ? "The client gets an acceptance email. Plan the work afterwards on My Work."
+                : `The client gets a rejection email${reason.trim() ? ` with your reason` : ` with the default reason`}. This cannot be undone.`}
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPending(null)}
+                disabled={busy}
+                className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={decide}
+                disabled={busy}
+                className={
+                  pending === "accept"
+                    ? "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 active:scale-[0.98] disabled:opacity-50"
+                    : "rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 active:scale-[0.98] disabled:opacity-50"
+                }
+              >
+                {busy ? "Working..." : pending === "accept" ? "Accept revision" : "Reject revision"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );
